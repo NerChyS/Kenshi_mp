@@ -1,4 +1,5 @@
 #include "core.h"
+#include <algorithm>
 #include "sync/pending_snapshot_queue.h"
 #include "sys/command_registry.h"
 #include "hooks/render_hooks.h"
@@ -1398,6 +1399,16 @@ void Core::PollForGameLoad() {
 
     s_pollCount++;
 
+    // ── Player guidance: tell the player roughly how long until multiplayer is ready ──
+    {
+        int eta = (loadingCreates > 0) ? 5 : std::max(2, (45 - (s_noCharCount + 1)) * 2);
+        m_loadEtaSeconds.store(eta, std::memory_order_relaxed);
+        if (s_pollCount == 1 || s_pollCount % 10 == 0) {
+            m_nativeHud.AddSystemMessage("Multiplayer ready in ~" + std::to_string(eta) +
+                                         "s, then press F1 > JOIN GAME.");
+        }
+    }
+
     if (loadingCreates > 0 && timeSinceCreate > 3000) {
         // Characters were created and they stopped — loading burst finished
         spdlog::info("Core::PollForGameLoad — {} creates detected, last create {}ms ago. "
@@ -1466,6 +1477,10 @@ static bool SEH_AllyModFaction(void* character);
 
 void Core::OnGameLoaded() {
     if (m_gameLoaded.exchange(true)) return; // Only run once
+    m_loadEtaSeconds.store(-1, std::memory_order_relaxed);
+    if (!m_connected.load()) {
+        m_nativeHud.AddSystemMessage("Multiplayer ready! Press F1 > JOIN GAME > host IP > CONNECT.");
+    }
 
     // Transition to GameReady phase
     TransitionTo(ClientPhase::GameReady);
@@ -1703,7 +1718,8 @@ void Core::OnGameLoaded() {
             m_clientPhase.store(ClientPhase::Connecting);
             m_nativeHud.LogStep("NET", "Connecting to " + m_config.lastServer + ":" + std::to_string(m_config.lastPort));
         } else {
-            m_nativeHud.AddSystemMessage("Connection failed - check server");
+            m_nativeHud.AddSystemMessage("Connection failed - is KenshiMP.Server.exe running on the host "
+                                         "and port 27800 UDP open? Press F1 > JOIN GAME to retry.");
         }
     }
 

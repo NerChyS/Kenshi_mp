@@ -87,6 +87,8 @@ public:
     PlayerID GetHostPlayerId() const { return m_hostPlayerId; }
     bool IsSteamVersion() const { return m_isSteamVersion; }
     bool IsGameLoaded() const { return m_gameLoaded; }
+    // Rough seconds until multiplayer becomes available while a world is loading (-1 = unknown)
+    int GetLoadEtaSeconds() const { return m_loadEtaSeconds.load(std::memory_order_relaxed); }
     bool IsLoading() const { return m_clientPhase == ClientPhase::Loading; }
     void SetLoading(bool) {} // No-op — phase transitions handled by state machine
 
@@ -317,6 +319,7 @@ private:
     std::atomic<bool> m_needsEntityRescan{false}; // Set by entity_hooks after faction bootstrap
     bool              m_needSpawnQueueReset = false; // HandleSpawnQueue statics reset on reconnect
     bool              m_needPollReset = false;       // PollForGameLoad statics reset on second load
+    std::atomic<int>  m_loadEtaSeconds{-1};          // HUD hint: seconds until load detection gives up waiting
     std::atomic<bool> m_forceSpawnBypass{false};     // /forcespawn command bypass
 
     // Host teleport timer (member instead of static so it resets on reconnect)

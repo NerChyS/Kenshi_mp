@@ -116,9 +116,9 @@ bool NativeHud::CreateWidgetsFallback() {
         bridge.SetProperty(m_statusText, "NeedMouse", "false");
     }
 
-    // Log panel — right side
+    // Log panel — small, top-left below the status bar (never covers the F1 panel)
     m_logPanel = bridge.CreateChildWidget(m_root, "Widget", "PanelEmpty",
-                                           0.6f, 0.05f, 0.39f, 0.55f, ALIGN_RIGHT_TOP, "HUDLogPanel");
+                                           0.005f, 0.05f, 0.32f, 0.30f, ALIGN_DEFAULT, "HUDLogPanel");
     if (m_logPanel) {
         bridge.SetProperty(m_logPanel, "NeedMouse", "false");
     }
@@ -132,13 +132,13 @@ bool NativeHud::CreateWidgetsFallback() {
         bridge.SetProperty(m_logTitle, "NeedMouse", "false");
     }
 
-    // Log lines (20 lines)
+    // Log lines (MAX_LOG_LINES)
     if (m_logPanel) {
         for (int i = 0; i < MAX_LOG_LINES; i++) {
-            float y = 0.08f + i * 0.04f;
+            float y = 0.08f + i * 0.065f;
             std::string name = "HUDLog" + std::to_string(i);
             m_logLines[i] = bridge.CreateChildWidget(m_logPanel, "TextBox", "TextBox",
-                                                      0.02f, y, 0.96f, 0.04f, ALIGN_HSTRETCH, name);
+                                                      0.02f, y, 0.96f, 0.065f, ALIGN_HSTRETCH, name);
             if (m_logLines[i]) {
                 bridge.SetProperty(m_logLines[i], "TextAlign", "Left VCenter");
                 bridge.SetProperty(m_logLines[i], "NeedMouse", "false");
@@ -148,7 +148,7 @@ bool NativeHud::CreateWidgetsFallback() {
 
     m_logHint = bridge.CreateChildWidget(m_logPanel ? m_logPanel : m_root,
                                           "TextBox", "TextBox",
-                                          0.02f, 0.92f, 0.96f, 0.06f, ALIGN_HSTRETCH, "HUDLogHint");
+                                          0.02f, 0.875f, 0.96f, 0.1f, ALIGN_HSTRETCH, "HUDLogHint");
     if (m_logHint) {
         bridge.SetCaption(m_logHint, "Insert = toggle  |  F1 = menu  |  Enter = chat");
         bridge.SetProperty(m_logHint, "TextAlign", "Center");
@@ -337,6 +337,17 @@ void NativeHud::UpdateStatusBar() {
         bridge.SetCaption(m_statusText, status);
     } else if (core.IsGameLoaded()) {
         status += "  |  NOT CONNECTED  |  F1 = Menu  |  Enter = Chat";
+        bridge.SetCaption(m_statusText, status);
+    } else if (core.GetClientPhase() == ClientPhase::Loading) {
+        int eta = core.GetLoadEtaSeconds();
+        if (eta > 0)
+            status += "  |  Loading world - multiplayer ready in ~" + std::to_string(eta) + "s, then F1";
+        else
+            status += "  |  Loading world...  |  F1 = Menu";
+        bridge.SetCaption(m_statusText, status);
+    } else if (core.GetClientPhase() == ClientPhase::MainMenu ||
+               core.GetClientPhase() == ClientPhase::Startup) {
+        status += "  |  Main menu: click MULTIPLAYER or press F1 for help";
         bridge.SetCaption(m_statusText, status);
     } else {
         status += "  |  Loading...  |  F1 = Menu";

@@ -99,6 +99,14 @@ private:
     // Credit
     void* m_creditText = nullptr;
 
+    // How-to-play help box (main buttons page) + second status line (Join page)
+    static constexpr int HELP_LINES = 6;
+    void* m_helpBox = nullptr;
+    void* m_helpLines[HELP_LINES] = {};
+    void* m_statusText2 = nullptr;
+    void UpdateHelpText();
+    bool m_serverLaunched = false;
+
     // Active EditBox tracking for keyboard input
     enum class ActiveField { None, IP, Port, Name, SettingsName };
     ActiveField m_activeField = ActiveField::None;

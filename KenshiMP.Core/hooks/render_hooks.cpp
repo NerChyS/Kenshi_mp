@@ -1,4 +1,6 @@
 #include "render_hooks.h"
+#include "../ui/game_language.h"
+#include "../ui/mygui_bridge.h"
 #include "../core.h"
 #include "entity_hooks.h"
 #include "kmp/hook_manager.h"
@@ -197,22 +199,45 @@ static LRESULT WndProcInner(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
         if (nativeMenu.IsVisible()) {
             // Native panel is open — forward click to its handler
             nativeMenu.OnClick(mx, my);
-        } else if (!Core::Get().IsGameLoaded() && IsMainMenuReady()) {
-            // On main menu — check if click hit our MULTIPLAYER button
+        } else if (!Core::Get().IsGameLoaded()) {
+            // On main menu — check if click hit our MULTIPLAYER button.
+            // Only in Startup/MainMenu phase: during loading / character creation the same
+            // screen area belongs to other game UI.
+            ClientPhase phase = Core::Get().GetClientPhase();
+            bool onMenu = (phase == ClientPhase::MainMenu || phase == ClientPhase::Startup);
             RECT clientRect;
-            if (GetClientRect(hWnd, &clientRect)) {
+            if (onMenu && GetClientRect(hWnd, &clientRect)) {
                 float screenW = static_cast<float>(clientRect.right - clientRect.left);
                 float screenH = static_cast<float>(clientRect.bottom - clientRect.top);
 
                 if (screenW > 0 && screenH > 0) {
                     float nx = static_cast<float>(mx) / screenW;
                     float ny = static_cast<float>(my) / screenH;
+                    // Small tolerance around the button (border/skin, DPI rounding)
+                    constexpr float PAD_X = 0.006f, PAD_Y = 0.008f;
+                    bool hit = nx >= MP_BTN_X - PAD_X && nx <= (MP_BTN_X + MP_BTN_W + PAD_X) &&
+                               ny >= MP_BTN_Y - PAD_Y && ny <= (MP_BTN_Y + MP_BTN_H + PAD_Y);
 
-                    if (nx >= MP_BTN_X && nx <= (MP_BTN_X + MP_BTN_W) &&
-                        ny >= MP_BTN_Y && ny <= (MP_BTN_Y + MP_BTN_H)) {
-                        spdlog::info("render_hooks: MULTIPLAYER button clicked ({}, {})", mx, my);
-                        nativeMenu.Show();
-                        return 0; // consume the click
+                    static int s_menuClickLogs = 0;
+                    if (s_menuClickLogs < 50) {
+                        s_menuClickLogs++;
+                        spdlog::info("render_hooks: main-menu click ({}, {}) norm=({:.3f}, {:.3f}) "
+                                     "client={}x{} phase={} ready={} hitMP={}",
+                                     mx, my, nx, ny, (int)screenW, (int)screenH,
+                                     ClientPhaseToString(phase), IsMainMenuReady(), hit);
+                    }
+
+                    if (hit) {
+                        if (!IsMainMenuReady()) {
+                            spdlog::info("render_hooks: MULTIPLAYER clicked too early (splash) — ignored");
+                        } else {
+                            spdlog::info("render_hooks: MULTIPLAYER button clicked ({}, {})", mx, my);
+                            nativeMenu.Show();
+                            if (!nativeMenu.IsVisible()) {
+                                spdlog::warn("render_hooks: MULTIPLAYER click — native menu failed to open");
+                            }
+                            return 0; // consume the click
+                        }
                     }
                 }
             }
@@ -382,8 +407,31 @@ static HRESULT __stdcall HookPresent(IDXGISwapChain* swapChain, UINT syncInterva
     s_prevPresentTime = now;
     s_hasPrevPresentTime = true;
 
+    // ── Localize the main-menu MULTIPLAYER button to the game's language (settings.cfg) ──
+    // Cheap: one FindWidget + SetCaption every ~2 s while on the main menu.
+    if (!core.IsGameLoaded() && IsMainMenuReady() && (s_presentCount % 120) == 0) {
+        ClientPhase ph = core.GetClientPhase();
+        if (ph == ClientPhase::MainMenu || ph == ClientPhase::Startup) {
+            const char* caption = GetMultiplayerButtonCaption();
+            if (std::string(caption) != "MULTIPLAYER") {
+                auto& bridge = MyGuiBridge::Get();
+                if (bridge.Init()) {
+                    if (void* btn = bridge.FindWidget("MultiplayerButton")) {
+                        static void* s_lastBtn = nullptr;
+                        bridge.SetCaption(btn, caption);
+                        if (btn != s_lastBtn) {
+                            s_lastBtn = btn;
+                            spdlog::info("render_hooks: MULTIPLAYER button caption set to game language '{}'",
+                                         GetGameLanguage());
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     // ── Periodic diagnostic ──
-    if (s_presentCount % 300 == 1) {
+    if (s_presentCount % 1800 == 1) {
         spdlog::info("render_hooks: frame={} phase={} gameLoaded={} connected={}",
                      s_presentCount, ClientPhaseToString(core.GetClientPhase()),
                      core.IsGameLoaded(), core.IsConnected());
@@ -436,8 +484,8 @@ static HRESULT __stdcall HookPresent(IDXGISwapChain* swapChain, UINT syncInterva
         static int s_connectedFrames = 0;
         s_connectedFrames++;
 
-        // Log first 20 connected frames, then every 100th
-        if (s_connectedFrames <= 20 || s_connectedFrames % 100 == 0) {
+        // Log first 5 connected frames, then every 6000th (was every 100th: ~260 KB of log per 2 min)
+        if (s_connectedFrames <= 5 || s_connectedFrames % 6000 == 0) {
             spdlog::debug("render_hooks: Connected frame #{} (present #{})",
                           s_connectedFrames, s_presentCount);
         }

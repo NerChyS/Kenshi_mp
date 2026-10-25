@@ -1,5 +1,6 @@
 #include "native_menu.h"
 #include "mygui_bridge.h"
+#include "game_language.h"
 #include "../core.h"
 #include "../hooks/entity_hooks.h"
 #include "kmp/constants.h"
@@ -22,7 +23,8 @@ bool NativeMenu::Init() {
     if (s_hasFailedBefore) {
         auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(
             std::chrono::steady_clock::now() - s_lastFailTime);
-        if (elapsed.count() < 10) {
+        if (elapsed.count() < 2) {
+            spdlog::info("NativeMenu: Init() in 2s cooldown after a failure");
             return false; // Still in cooldown
         }
     }
@@ -31,7 +33,7 @@ bool NativeMenu::Init() {
 
     auto& bridge = MyGuiBridge::Get();
     if (!bridge.Init()) {
-        spdlog::warn("NativeMenu: MyGuiBridge not ready yet");
+        spdlog::warn("NativeMenu: MyGuiBridge not ready yet (MyGUIEngine_x64.dll / symbols)");
         s_hasFailedBefore = true;
         s_lastFailTime = std::chrono::steady_clock::now();
         return false;
@@ -88,11 +90,11 @@ bool NativeMenu::Init() {
     bridge.SetCaption(m_joinButton, "JOIN GAME");
     bridge.SetCaption(m_settingsButton, "SETTINGS");
     if (m_browserButton) bridge.SetCaption(m_browserButton, "SERVER BROWSER");
-    bridge.SetCaption(m_backButton, "BACK");
+    bridge.SetCaption(m_backButton, "CLOSE");
     bridge.SetCaption(m_connectButton, "CONNECT");
     bridge.SetCaption(m_joinBackButton, "BACK");
     bridge.SetCaption(m_settingsBackButton, "BACK");
-    if (m_creditText) bridge.SetCaption(m_creditText, "KenshiMP by fourzerofour");
+    if (m_creditText) bridge.SetCaption(m_creditText, "Improved by ChyS");
 
     // IMPORTANT: Start hidden — the Root widget may be visible by default from the layout.
     // If left visible, it blocks all clicks from reaching the game (splash screen, etc.)
@@ -136,6 +138,8 @@ bool NativeMenu::CacheWidgets() {
         {"MPBrowserBack",      &m_browserBackButton},
         {"MPBrowserStatus",    &m_browserStatusText},
         {"MPCreditText",       &m_creditText},
+        {"MPStatusText2",      &m_statusText2},
+        {"MPHelpBox",          &m_helpBox},
     };
 
     int found = 0;
@@ -149,6 +153,11 @@ bool NativeMenu::CacheWidgets() {
         } else {
             spdlog::warn("NativeMenu: Widget '{}' not found", lk.name);
         }
+    }
+
+    // Help text lines (optional — older layouts don't have them)
+    for (int i = 0; i < HELP_LINES; i++) {
+        m_helpLines[i] = bridge.FindWidget("MPHelp" + std::to_string(i));
     }
 
     // Cache server browser row widgets
@@ -169,7 +178,13 @@ bool NativeMenu::CacheWidgets() {
 
 void NativeMenu::Show() {
     if (!m_initialized) {
-        if (!Init()) return;
+        if (!Init()) {
+            spdlog::error("NativeMenu: Show() failed — panel could not be initialized "
+                          "(check that data/gui/layout/Kenshi_MultiplayerPanel.layout is installed)");
+            Core::Get().GetNativeHud().AddSystemMessage(
+                "Multiplayer menu not ready yet - wait a few seconds and try again (or press F1).");
+            return;
+        }
     }
 
     auto& bridge = MyGuiBridge::Get();
@@ -208,6 +223,8 @@ void NativeMenu::ShowPanel(Panel panel) {
     if (m_settingsButton) bridge.SetVisible(m_settingsButton, showMain);
     if (m_browserButton)  bridge.SetVisible(m_browserButton, showMain);
     if (m_backButton)     bridge.SetVisible(m_backButton, showMain);
+    if (m_helpBox)        bridge.SetVisible(m_helpBox, showMain);
+    if (showMain) UpdateHelpText();
 
     // Show the selected sub-panel
     switch (panel) {
@@ -276,9 +293,13 @@ void NativeMenu::OnClick(int screenX, int screenY) {
             bridge.SetCaption(m_serverIPEdit, m_storedIP);
             bridge.SetCaption(m_serverPortEdit, m_storedPort);
             bridge.SetCaption(m_playerNameEdit, m_storedName);
-            SetStatus("");
+            if (Core::Get().IsGameLoaded()) {
+                SetStatus(GetJoinHintLoaded());
+            } else {
+                SetStatus(GetJoinHintPreLoad());
+            }
             ShowPanel(Panel::Join);
-            spdlog::info("NativeMenu: JOIN GAME clicked");
+            spdlog::info("NativeMenu: JOIN GAME clicked (gameLoaded={})", Core::Get().IsGameLoaded());
         } else if (testMainButton(SETTINGS_BTN)) {
             auto& config = Core::Get().GetConfig();
             auto& bridge = MyGuiBridge::Get();
@@ -425,8 +446,30 @@ std::string NativeMenu::GetPlayerName() {
 }
 
 void NativeMenu::SetStatus(const std::string& text) {
+    std::string line1 = text, line2;
+    size_t nl = text.find('\n');
+    if (nl != std::string::npos) {
+        line1 = text.substr(0, nl);
+        line2 = text.substr(nl + 1);
+    }
     if (m_statusText) {
-        MyGuiBridge::Get().SetCaption(m_statusText, text);
+        MyGuiBridge::Get().SetCaption(m_statusText, m_statusText2 ? line1 : (line2.empty() ? line1 : line1 + " " + line2));
+    }
+    if (m_statusText2) {
+        MyGuiBridge::Get().SetCaption(m_statusText2, line2);
+    }
+}
+
+void NativeMenu::UpdateHelpText() {
+    if (!m_initialized) return;
+    auto& bridge = MyGuiBridge::Get();
+    auto& core = Core::Get();
+
+    const char* lines[HELP_LINES] = {};
+    int mode = !core.IsGameLoaded() ? 0 : (core.IsConnected() ? 2 : 1);
+    GetHelpLines(mode, m_serverLaunched, lines);
+    for (int i = 0; i < HELP_LINES; i++) {
+        if (m_helpLines[i]) bridge.SetCaption(m_helpLines[i], lines[i] ? lines[i] : "");
     }
 }
 
@@ -471,7 +514,8 @@ void NativeMenu::OnHostClicked() {
         PROCESS_INFORMATION pi = {};
 
         if (CreateProcessA(serverExe.c_str(), nullptr, nullptr, nullptr,
-                           FALSE, CREATE_NEW_CONSOLE, nullptr, nullptr, &si, &pi)) {
+                           FALSE, CREATE_NEW_CONSOLE, nullptr,
+                           dllDir.empty() ? nullptr : dllDir.c_str(), &si, &pi)) {
             CloseHandle(pi.hProcess);
             CloseHandle(pi.hThread);
 
@@ -480,15 +524,24 @@ void NativeMenu::OnHostClicked() {
             overlay.SetAutoConnect("127.0.0.1", KMP_DEFAULT_PORT);
 
             spdlog::info("NativeMenu: Launched server: {}", serverExe);
+            m_serverLaunched = true;
 
-            // HIDE the panel so user can click Kenshi's New Game button
-            Hide();
+            if (Core::Get().IsGameLoaded()) {
+                Core::Get().GetNativeHud().AddSystemMessage(
+                    "Server started - connecting to it (127.0.0.1) in a few seconds...");
+                Hide();
+            } else {
+                // Keep the panel open so the player can read the next steps
+                UpdateHelpText();
+            }
         } else {
             SetStatus("Failed to launch server.");
+            if (m_helpLines[0]) MyGuiBridge::Get().SetCaption(m_helpLines[0], "Failed to launch KenshiMP.Server.exe.");
             spdlog::error("NativeMenu: CreateProcess failed: {}", GetLastError());
         }
     } else {
-        SetStatus("Server exe not found.");
+        SetStatus("KenshiMP.Server.exe not found next to KenshiMP.Core.dll.");
+        if (m_helpLines[0]) MyGuiBridge::Get().SetCaption(m_helpLines[0], "KenshiMP.Server.exe not found - reinstall.");
         spdlog::error("NativeMenu: Server exe not found in any expected path");
     }
 }
@@ -518,7 +571,7 @@ void NativeMenu::OnConnectClicked() {
     // Log to NativeHud (visible immediately)
     std::string statusMsg = core.IsGameLoaded()
         ? "Connecting to " + ip + ":" + portStr + " as '" + name + "'..."
-        : "Connecting to " + ip + ":" + portStr + " — sync will start when you load a save.";
+        : "Connecting to " + ip + ":" + portStr + " - sync starts after New Game > 'Multiplayer' start loads.";
     core.GetNativeHud().LogStep("NET", "Connecting to " + ip + ":" + portStr + "...");
     core.GetNativeHud().AddSystemMessage(statusMsg);
 
@@ -537,7 +590,7 @@ void NativeMenu::OnConnectClicked() {
         core.GetNativeHud().LogStep("NET", "Connection started");
         Hide();
     } else {
-        SetStatus("Failed to connect. Check server address.");
+        SetStatus("Could not start the connection.\nCheck the IP address and port (27800).");
         core.GetNativeHud().LogStep("ERR", "ConnectAsync failed!");
     }
 }

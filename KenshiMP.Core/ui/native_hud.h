@@ -50,7 +50,7 @@ public:
 
     static constexpr int MAX_CHAT_LINES = 10;
     static constexpr int MAX_PLAYER_ROWS = 8;
-    static constexpr int MAX_LOG_LINES = 20;
+    static constexpr int MAX_LOG_LINES = 12;
 
 private:
     bool CacheWidgets();
@@ -83,7 +83,7 @@ private:
     bool m_visible = false;
     bool m_showPlayerList = false;
     bool m_showDebug = false;
-    bool m_showLogPanel = true;  // Visible by default during loading
+    bool m_showLogPanel = false; // Hidden by default (Insert toggles) so it never covers the F1 panel
     bool m_chatInputActive = false;
     std::string m_chatInputText;
     int m_frameCounter = 0;

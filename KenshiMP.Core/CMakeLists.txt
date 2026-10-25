@@ -67,6 +67,7 @@ add_library(KenshiMP.Core SHARED
     ui/overlay.cpp
     ui/mygui_bridge.cpp
     ui/native_menu.cpp
+    ui/game_language.cpp
     ui/native_hud.cpp
 )
 

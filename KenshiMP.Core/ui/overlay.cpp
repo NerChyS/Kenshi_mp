@@ -86,7 +86,7 @@ void Overlay::Update() {
                 OutputDebugStringA("KMP: Overlay — ConnectAsync started\n");
             } else {
                 core.GetNativeHud().LogStep("ERR", "Auto-connect failed");
-                core.GetNativeHud().AddSystemMessage("Auto-connect failed. Press F1 to retry.");
+                core.GetNativeHud().AddSystemMessage("Auto-connect failed. Press F1 > JOIN GAME > CONNECT to retry.");
                 OutputDebugStringA("KMP: Overlay — ConnectAsync FAILED\n");
             }
         }
@@ -164,6 +164,9 @@ void Overlay::Update() {
                 AddSystemMessage("Connection failed after all retry attempts.");
                 core.GetNativeHud().LogStep("ERR", "Connection FAILED after " + std::to_string(m_maxConnectAttempts) + " attempts");
                 core.GetNativeHud().AddSystemMessage("Connection failed after " + std::to_string(m_maxConnectAttempts) + " attempts.");
+                core.GetNativeHud().AddSystemMessage(
+                    "Server " + std::string(m_serverAddress) + ":" + std::string(m_serverPort) +
+                    " not reachable: is KenshiMP.Server.exe running on the host and port 27800 UDP open?");
                 OutputDebugStringA("KMP: Overlay — all connection retries exhausted\n");
                 m_connectAttempt = 0;
                 if (gameLoaded) {
@@ -172,7 +175,8 @@ void Overlay::Update() {
                 if (!gameLoaded) {
                     if (m_nativeMenu.IsInitialized()) {
                         m_nativeMenu.Show();
-                        m_nativeMenu.SetStatus("Connection failed. Check server address or try again.");
+                        m_nativeMenu.SetStatus("Server not reachable: is KenshiMP.Server.exe running\n"
+                                               "on the host and port 27800 UDP open?");
                     }
                 }
             }
