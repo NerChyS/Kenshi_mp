@@ -1,5 +1,6 @@
 #include "mygui_bridge.h"
 #include <spdlog/spdlog.h>
+#include <cstring>
 
 namespace kmp {
 
@@ -234,6 +235,19 @@ bool MyGuiBridge::Init() {
         },
     };
 
+    // Optional helpers (used to find widgets of Kenshi's own BaseLayout-prefixed layouts)
+    m_fnLayerMgrInstance = reinterpret_cast<void*>(GetProcAddress(m_hMyGUI,
+        "?getInstance@?$Singleton@VLayerManager@MyGUI@@@MyGUI@@SAAEAVLayerManager@2@XZ"));
+    m_fnWidgetFromPoint = reinterpret_cast<void*>(GetProcAddress(m_hMyGUI,
+        "?getWidgetFromPoint@LayerManager@MyGUI@@QEAAPEAVWidget@2@HH@Z"));
+    m_fnGetName = reinterpret_cast<void*>(GetProcAddress(m_hMyGUI,
+        "?getName@Widget@MyGUI@@QEBAAEBV?$basic_string@DU?$char_traits@D@std@@V?$allocator@D@2@@std@@XZ"));
+    m_fnGetParent = reinterpret_cast<void*>(GetProcAddress(m_hMyGUI,
+        "?getParent@Widget@MyGUI@@QEBAPEAV12@XZ"));
+    spdlog::info("MyGuiBridge: optional LayerManager={} getWidgetFromPoint={} getName={} getParent={}",
+                 m_fnLayerMgrInstance != nullptr, m_fnWidgetFromPoint != nullptr,
+                 m_fnGetName != nullptr, m_fnGetParent != nullptr);
+
     int resolved = 0;
     int total = sizeof(symbols) / sizeof(symbols[0]);
 
@@ -280,6 +294,64 @@ bool MyGuiBridge::Init() {
 #endif
                  );
     return true;
+}
+
+static void* SEH_WidgetFromPoint(void* fnInst, void* fnPoint, int x, int y) {
+    __try {
+        using Inst = void* (__cdecl*)();
+        using Pt = void* (__fastcall*)(void*, int, int);
+        void* lm = reinterpret_cast<Inst>(fnInst)();
+        if (!lm) return nullptr;
+        return reinterpret_cast<Pt>(fnPoint)(lm, x, y);
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return nullptr;
+    }
+}
+
+static bool SEH_GetName(void* fn, void* widget, char* out, size_t outSize) {
+    __try {
+        using Fn = const void* (__fastcall*)(void*);
+        const uint8_t* str = reinterpret_cast<const uint8_t*>(reinterpret_cast<Fn>(fn)(widget));
+        if (!str) return false;
+        // MSVC x64 std::string: 16-byte SSO buffer / heap pointer, size_t size, size_t capacity
+        size_t size = *reinterpret_cast<const size_t*>(str + 16);
+        size_t cap  = *reinterpret_cast<const size_t*>(str + 24);
+        if (size >= outSize || size > cap) return false;
+        const char* chars = (cap >= 16) ? *reinterpret_cast<const char* const*>(str)
+                                        : reinterpret_cast<const char*>(str);
+        if (!chars) return false;
+        memcpy(out, chars, size);
+        out[size] = '\0';
+        return true;
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return false;
+    }
+}
+
+static void* SEH_GetParent(void* fn, void* widget) {
+    __try {
+        using Fn = void* (__fastcall*)(void*);
+        return reinterpret_cast<Fn>(fn)(widget);
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        return nullptr;
+    }
+}
+
+void* MyGuiBridge::WidgetFromPoint(int x, int y) {
+    if (!m_ready || !m_fnLayerMgrInstance || !m_fnWidgetFromPoint) return nullptr;
+    return SEH_WidgetFromPoint(m_fnLayerMgrInstance, m_fnWidgetFromPoint, x, y);
+}
+
+std::string MyGuiBridge::GetWidgetName(void* widget) {
+    if (!m_ready || !widget || !m_fnGetName) return "";
+    char buf[256];
+    if (!SEH_GetName(m_fnGetName, widget, buf, sizeof(buf))) return "";
+    return buf;
+}
+
+void* MyGuiBridge::GetParent(void* widget) {
+    if (!m_ready || !widget || !m_fnGetParent) return nullptr;
+    return SEH_GetParent(m_fnGetParent, widget);
 }
 
 void* MyGuiBridge::GetLayoutManager() {

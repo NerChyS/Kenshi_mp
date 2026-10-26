@@ -1,0 +1,27 @@
+{
+  "gameSpeed": 1.0,
+  "masterPort": 27801,
+  "masterServer": "162.248.94.149",
+  "masterServerEnabled": false,
+  "maxPlayers": 16,
+  "password": "",
+  "port": 27800,
+  "pvpEnabled": true,
+  "savePath": "world.kmpsave",
+  "serverName": "KenshiMP Server",
+  "tickRate": 20,
+  "worldOptions": {
+    "enabled": true,
+    "damageMultiplier": 1.0,
+    "buildingSpeed": 1.0,
+    "researchSpeed": 1.0,
+    "productionSpeed": 1.0,
+    "hungerTime": 1.0,
+    "nestsMultiplier": 1.0,
+    "deathFrequency": 1.0,
+    "easyProspecting": false,
+    "banditsLootPlayer": true,
+    "animalsEat": true,
+    "difficultHealing": false
+  }
+}

@@ -343,7 +343,7 @@ void NativeHud::UpdateStatusBar() {
         if (eta > 0)
             status += "  |  Loading world - multiplayer ready in ~" + std::to_string(eta) + "s, then F1";
         else
-            status += "  |  Loading world...  |  F1 = Menu";
+            status += "  |  Loading world - almost ready...";
         bridge.SetCaption(m_statusText, status);
     } else if (core.GetClientPhase() == ClientPhase::MainMenu ||
                core.GetClientPhase() == ClientPhase::Startup) {

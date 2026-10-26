@@ -1,6 +1,7 @@
 #include "native_menu.h"
 #include "mygui_bridge.h"
 #include "game_language.h"
+#include "../game/world_options.h"
 #include "../core.h"
 #include "../hooks/entity_hooks.h"
 #include "kmp/constants.h"
@@ -468,6 +469,15 @@ void NativeMenu::UpdateHelpText() {
     const char* lines[HELP_LINES] = {};
     int mode = !core.IsGameLoaded() ? 0 : (core.IsConnected() ? 2 : 1);
     GetHelpLines(mode, m_serverLaunched, lines);
+
+    // Host's world settings (S2C_WorldOptions) when connected
+    std::string wo0, wo1;
+    if (mode == 2 && world_options::HasOptions()) {
+        wo0 = "Server settings: " + world_options::SummaryLine(0);
+        wo1 = world_options::SummaryLine(1);
+        lines[4] = wo0.c_str();
+        lines[5] = wo1.c_str();
+    }
     for (int i = 0; i < HELP_LINES; i++) {
         if (m_helpLines[i]) bridge.SetCaption(m_helpLines[i], lines[i] ? lines[i] : "");
     }
@@ -567,6 +577,7 @@ void NativeMenu::OnConnectClicked() {
 
     // Update overlay's connection state so it can handle the async result
     overlay.SetConnectionInfo(ip, port, name);
+    overlay.ClearQuietAutoConnect();
 
     // Log to NativeHud (visible immediately)
     std::string statusMsg = core.IsGameLoaded()

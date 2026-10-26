@@ -53,6 +53,16 @@ public:
                            float x, float y, float w, float h, int align,
                            const std::string& layer, const std::string& name);
 
+    // Widget under a screen point (LayerManager::getWidgetFromPoint), or nullptr.
+    void* WidgetFromPoint(int x, int y);
+
+    // Widget name (Widget::getName) — "" if unavailable. Widgets of layouts loaded through
+    // MyGUI::BaseLayout carry a unique prefix, so compare with EndsWith.
+    std::string GetWidgetName(void* widget);
+
+    // Parent widget (Widget::getParent), or nullptr.
+    void* GetParent(void* widget);
+
     // Get the LayoutManager singleton
     void* GetLayoutManager();
 
@@ -138,6 +148,10 @@ private:
     FnUnloadLayout    m_fnUnloadLayout = nullptr;
     FnSetProperty     m_fnSetProperty = nullptr;
     FnSetAlpha        m_fnSetAlpha = nullptr;
+    void*             m_fnLayerMgrInstance = nullptr;   // optional
+    void*             m_fnWidgetFromPoint = nullptr;    // optional: LayerManager::getWidgetFromPoint(int,int) const
+    void*             m_fnGetName = nullptr;            // optional: const std::string& Widget::getName() const
+    void*             m_fnGetParent = nullptr;          // optional: Widget* Widget::getParent() const
     FnGuiCreateWidgetReal       m_fnGuiCreateWidgetReal = nullptr;
     FnWidgetCreateWidgetReal    m_fnWidgetCreateWidgetReal = nullptr;
 

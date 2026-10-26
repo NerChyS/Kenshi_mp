@@ -39,8 +39,10 @@ SnapshotDecision AuthorityValidator::ValidateInboundSnapshot(
         return SnapshotDecision::ReconcileLocal;
     }
 
-    // 4b. Source doesn't own this entity → authority violation
-    if (ownerPlayerId != sourcePlayerId) {
+    // 4b. Source doesn't own this entity → authority violation.
+    //     sourcePlayerId 0 = relayed by the server (S2C_PositionUpdate batches every
+    //     entity with source 0); the server already validated ownership, so accept it.
+    if (ownerPlayerId != sourcePlayerId && sourcePlayerId != 0) {
         spdlog::warn(
             "[AuthorityValidator] Authority violation: entity {} owned by player {} "
             "but update came from player {}",

@@ -1,4 +1,5 @@
 #include "../core.h"
+#include "../game/world_options.h"
 #include "../game/game_types.h"
 #include "../game/game_inventory.h"
 #include "../game/spawn_manager.h"
@@ -213,6 +214,11 @@ public:
         case MessageType::S2C_LobbyStart:
             HandleLobbyStart(reader);
             return;
+        case MessageType::S2C_WorldOptions: {
+            MsgWorldOptions wo{};
+            if (reader.ReadRaw(&wo, sizeof(wo))) world_options::OnReceived(wo);
+            return;
+        }
         case MessageType::S2C_PipelineSnapshot: {
             PlayerID sender;
             if (!reader.ReadU32(sender)) return;
@@ -359,7 +365,11 @@ private:
         auto& core = Core::Get();
         core.SetLocalPlayerId(msg.playerId);
         core.SetConnected(true);
-        core.TransitionTo(ClientPhase::Connected);
+        // Don't leave the Loading phase if the handshake completes while a world is
+        // still loading (load detection only runs in the Loading phase).
+        if (core.GetClientPhase() != ClientPhase::Loading) {
+            core.TransitionTo(ClientPhase::Connected);
+        }
 
         // Host identity arrives via S2C_HostAssignment — do NOT guess from currentPlayers.
         // The server sends S2C_HostAssignment immediately after this ack when we're the host.
@@ -1272,8 +1282,17 @@ private:
         // Check for ghost entities: entities we have locally that the server doesn't know about
         auto localIds = registry.GetRemoteEntities();
         int cleaned = 0;
+        // Require two consecutive misses (~10 s) before deleting: a spawn can race the
+        // heartbeat, and a wrongly removed entity breaks appearance sync and position updates.
+        static std::unordered_map<EntityID, int> s_misses;
         for (EntityID localId : localIds) {
-            if (serverEntities.find(localId) == serverEntities.end()) {
+            if (serverEntities.find(localId) != serverEntities.end()) { s_misses.erase(localId); continue; }
+            if (++s_misses[localId] < 2) {
+                spdlog::info("PacketHandler: Heartbeat — entity {} missing from server list (1st time)", localId);
+                continue;
+            }
+            s_misses.erase(localId);
+            {
                 spdlog::warn("PacketHandler: Heartbeat — entity {} not in server list, cleaning up", localId);
                 // BUG 2 FIX: Decrement spawn cap before unregistering
                 auto ghostInfo = registry.GetInfo(localId);

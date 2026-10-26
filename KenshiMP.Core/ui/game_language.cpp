@@ -77,9 +77,9 @@ void GetHelpLines(int mode, bool serverLaunched, const char* out[6]) {
         if (mode == 0) {
             out[0] = serverLaunched ? u8"¡Servidor iniciado! Deja su consola abierta." : u8"Cómo jugar:";
             out[1] = u8"1. Anfitrión: HOST GAME (inicia KenshiMP.Server.exe).";
-            out[2] = u8"2. JOIN GAME > IP del anfitrión (él: 127.0.0.1) > CONNECT.";
-            out[3] = u8"3. Nueva partida > inicio 'Multiplayer' > personaje.";
-            out[4] = u8"4. Espera ~90 s a la barra KENSHI ONLINE (F1 = menú).";
+            out[2] = u8"2. CLOSE > Nueva partida > 'Multiplayer' > Confirmar.";
+            out[3] = u8"3. Espera 'Multiplayer ready' (como mucho ~90 s).";
+            out[4] = u8"4. F1 > JOIN GAME > IP del anfitrión (él: 127.0.0.1) > CONNECT.";
             out[5] = u8"¿No conectan? Abre el puerto 27800 UDP o usa una VPN.";
         } else if (mode == 1) {
             out[0] = u8"Mundo cargado - listo para conectar:";
@@ -99,9 +99,9 @@ void GetHelpLines(int mode, bool serverLaunched, const char* out[6]) {
         if (mode == 0) {
             out[0] = serverLaunched ? u8"Сервер запущен! Не закрывайте его консоль." : u8"Как играть:";
             out[1] = u8"1. Хост: HOST GAME (запускает KenshiMP.Server.exe).";
-            out[2] = u8"2. JOIN GAME > IP хоста (хост: 127.0.0.1) > CONNECT.";
-            out[3] = u8"3. Новая игра > старт 'Multiplayer' > персонаж.";
-            out[4] = u8"4. Ждите ~90 с панель KENSHI ONLINE (F1 = меню).";
+            out[2] = u8"2. CLOSE > Новая игра > 'Multiplayer' > Подтвердить.";
+            out[3] = u8"3. Ждите 'Multiplayer ready' (не более ~90 с).";
+            out[4] = u8"4. F1 > JOIN GAME > IP хоста (хост: 127.0.0.1) > CONNECT.";
             out[5] = u8"Не подключаются? Откройте порт 27800 UDP или VPN.";
         } else if (mode == 1) {
             out[0] = u8"Мир загружен - можно подключаться:";
@@ -120,9 +120,9 @@ void GetHelpLines(int mode, bool serverLaunched, const char* out[6]) {
     if (mode == 0) {
         out[0] = serverLaunched ? "Server started! Keep its console open. Next:" : "How to play:";
         out[1] = "1. Host: HOST GAME (starts KenshiMP.Server.exe).";
-        out[2] = "2. JOIN GAME > host IP (host: 127.0.0.1) > CONNECT.";
-        out[3] = "3. New Game > 'Multiplayer' > character > Confirm.";
-        out[4] = "4. Wait ~90 s for the KENSHI ONLINE bar (F1 = menu).";
+        out[2] = "2. CLOSE > New Game > 'Multiplayer' > Confirm.";
+        out[3] = "3. Wait for 'Multiplayer ready' (at most ~90 s).";
+        out[4] = "4. F1 > JOIN GAME > host IP (host: 127.0.0.1) > CONNECT.";
         out[5] = "Friends can't join? Open port 27800 UDP / use a VPN.";
     } else if (mode == 1) {
         out[0] = "World loaded - ready to connect:";
@@ -140,12 +140,12 @@ void GetHelpLines(int mode, bool serverLaunched, const char* out[6]) {
 
 const char* GetJoinHintPreLoad() {
     const std::string& l = GetGameLanguage();
-    if (l == "es") return u8"Puedes conectar ya. La sincronización empieza al cargar:\n"
-                          u8"Nueva partida > 'Multiplayer' > personaje > Confirmar.";
-    if (l == "ru") return u8"Можно подключиться сейчас. Синхронизация после загрузки:\n"
-                          u8"Новая игра > 'Multiplayer' > персонаж > Подтвердить.";
-    return "You can connect now. Sync starts after you load a world:\n"
-           "New Game > 'Multiplayer' start > create character > Confirm.";
+    if (l == "es") return u8"Mejor: conecta con F1 cuando el mundo ya esté cargado.\n"
+                          u8"Si conectas aquí, después inicia Nueva partida > 'Multiplayer'.";
+    if (l == "ru") return u8"Лучше подключаться по F1, когда мир уже загружен.\n"
+                          u8"Если подключитесь здесь, затем: Новая игра > 'Multiplayer'.";
+    return "Best: connect with F1 once the world has loaded.\n"
+           "If you connect here, then start New Game > 'Multiplayer'.";
 }
 
 const char* GetJoinHintLoaded() {

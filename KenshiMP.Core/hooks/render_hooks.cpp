@@ -3,6 +3,8 @@
 #include "../ui/mygui_bridge.h"
 #include "../core.h"
 #include "entity_hooks.h"
+#include "input_hooks.h"
+#include "../game/new_game_setup.h"
 #include "kmp/hook_manager.h"
 #include <spdlog/spdlog.h>
 #include <d3d11.h>
@@ -153,14 +155,16 @@ static LRESULT WndProcInner(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
 
     // WM_CHAR: forward printable characters to active UI, always consume when modal
     if (uMsg == WM_CHAR) {
+        // Characters may also arrive through the OIS keyDownEvent hook; input_hooks
+        // types each key once, whichever path sees it first.
         if (chatActive) {
-            Core::Get().GetNativeHud().OnChatChar(static_cast<wchar_t>(wParam));
+            input_hooks::OnWndChar(static_cast<wchar_t>(wParam));
             return 0;
         }
         if (menuVisible) {
             auto& nativeMenu = Core::Get().GetOverlay().GetNativeMenu();
             if (nativeMenu.HasActiveEditBox()) {
-                nativeMenu.OnChar(static_cast<wchar_t>(wParam));
+                input_hooks::OnWndChar(static_cast<wchar_t>(wParam));
             }
             return 0; // always consume when menu is visible (modal)
         }
@@ -204,7 +208,8 @@ static LRESULT WndProcInner(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
             // Only in Startup/MainMenu phase: during loading / character creation the same
             // screen area belongs to other game UI.
             ClientPhase phase = Core::Get().GetClientPhase();
-            bool onMenu = (phase == ClientPhase::MainMenu || phase == ClientPhase::Startup);
+            bool onMenu = (phase == ClientPhase::MainMenu || phase == ClientPhase::Startup ||
+                           phase == ClientPhase::Connected || phase == ClientPhase::Connecting);
             RECT clientRect;
             if (onMenu && GetClientRect(hWnd, &clientRect)) {
                 float screenW = static_cast<float>(clientRect.right - clientRect.left);
@@ -225,6 +230,23 @@ static LRESULT WndProcInner(HWND hWnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
                                      "client={}x{} phase={} ready={} hitMP={}",
                                      mx, my, nx, ny, (int)screenW, (int)screenH,
                                      ClientPhaseToString(phase), IsMainMenuReady(), hit);
+                    }
+
+                    // Remember which of Kenshi's own menu buttons was clicked last
+                    // (New Game vs Continue/Load) — used to detect a freshly started game.
+                    if (!hit && nx >= MP_BTN_X && nx <= MP_BTN_X + MP_BTN_W) {
+                        struct { float y; new_game_setup::MenuButton b; } menuBtns[] = {
+                            {0.138889f, new_game_setup::MenuButton::Continue},
+                            {0.25f,     new_game_setup::MenuButton::NewGame},
+                            {0.360185f, new_game_setup::MenuButton::LoadGame},
+                            {0.471296f, new_game_setup::MenuButton::Import},
+                        };
+                        for (auto& mb : menuBtns) {
+                            if (ny >= mb.y && ny <= mb.y + MP_BTN_H) {
+                                new_game_setup::OnMainMenuButtonClicked(mb.b);
+                                break;
+                            }
+                        }
                     }
 
                     if (hit) {
@@ -270,6 +292,15 @@ static std::chrono::steady_clock::time_point s_lastFrameTime{};
 static bool s_hasLastFrameTime = false;
 
 // ── SEH wrappers for per-frame calls ──
+static void SEH_NewGameSetupTick() {
+    __try {
+        new_game_setup::Tick();
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        static int s_count = 0;
+        if (++s_count <= 5) OutputDebugStringA("KMP: SEH CRASH in new_game_setup::Tick()\n");
+    }
+}
+
 static void SEH_OverlayUpdate() {
     __try {
         Core::Get().GetOverlay().Update();
@@ -347,7 +378,9 @@ static HRESULT __stdcall HookPresent(IDXGISwapChain* swapChain, UINT syncInterva
         if (s_hasPrevPresentTime) {
             auto gap = std::chrono::duration_cast<std::chrono::milliseconds>(now - s_prevPresentTime);
             if (gap.count() > 2000) {
-                if (phase == ClientPhase::MainMenu) {
+                bool connectedBeforeLoad = !core.IsGameLoaded() &&
+                    (phase == ClientPhase::Connected || phase == ClientPhase::Connecting);
+                if (phase == ClientPhase::MainMenu || connectedBeforeLoad) {
                     // Only detect loading gap from MainMenu — NOT from Startup.
                     // The initial engine loading (shaders, textures, splash screen)
                     // creates >2s gaps during Startup, which is NOT a save game load.
@@ -408,30 +441,63 @@ static HRESULT __stdcall HookPresent(IDXGISwapChain* swapChain, UINT syncInterva
     s_hasPrevPresentTime = true;
 
     // ── Localize the main-menu MULTIPLAYER button to the game's language (settings.cfg) ──
-    // Cheap: one FindWidget + SetCaption every ~2 s while on the main menu.
-    if (!core.IsGameLoaded() && IsMainMenuReady() && (s_presentCount % 120) == 0) {
+    // Kenshi loads its menus through MyGUI::BaseLayout, which prefixes every widget name
+    // with a unique string, so Gui::findWidget("MultiplayerButton") usually fails. Find the
+    // button by hit-testing its known screen position instead, and check the name suffix.
+    static auto s_lastCaptionTry = std::chrono::steady_clock::time_point{};
+    if (!core.IsGameLoaded() && IsMainMenuReady() && s_hwnd &&
+        std::chrono::steady_clock::now() - s_lastCaptionTry > std::chrono::seconds(1)) {
+        s_lastCaptionTry = std::chrono::steady_clock::now();
         ClientPhase ph = core.GetClientPhase();
-        if (ph == ClientPhase::MainMenu || ph == ClientPhase::Startup) {
+        static int s_captionSetCount = 0;
+        if ((ph == ClientPhase::MainMenu || ph == ClientPhase::Startup ||
+             ph == ClientPhase::Connected || ph == ClientPhase::Connecting) && s_captionSetCount < 1000000) {
             const char* caption = GetMultiplayerButtonCaption();
-            if (std::string(caption) != "MULTIPLAYER") {
-                auto& bridge = MyGuiBridge::Get();
-                if (bridge.Init()) {
-                    if (void* btn = bridge.FindWidget("MultiplayerButton")) {
-                        static void* s_lastBtn = nullptr;
-                        bridge.SetCaption(btn, caption);
-                        if (btn != s_lastBtn) {
-                            s_lastBtn = btn;
-                            spdlog::info("render_hooks: MULTIPLAYER button caption set to game language '{}'",
-                                         GetGameLanguage());
+            auto& bridge = MyGuiBridge::Get();
+            if (std::string(caption) != "MULTIPLAYER" && bridge.Init() &&
+                !core.GetOverlay().GetNativeMenu().IsVisible()) {
+                static const std::string kSuffix = "MultiplayerButton";
+                auto endsWith = [](const std::string& s, const std::string& suf) {
+                    return s.size() >= suf.size() && s.compare(s.size() - suf.size(), suf.size(), suf) == 0;
+                };
+                void* btn = bridge.FindWidget(kSuffix);
+                const char* how = "name";
+                if (!btn) {
+                    RECT rc;
+                    if (GetClientRect(s_hwnd, &rc) && rc.right > 0 && rc.bottom > 0) {
+                        int px = static_cast<int>((MP_BTN_X + MP_BTN_W * 0.5f) * rc.right);
+                        int py = static_cast<int>((MP_BTN_Y + MP_BTN_H * 0.5f) * rc.bottom);
+                        void* w = bridge.WidgetFromPoint(px, py);
+                        for (int depth = 0; w && depth < 4; depth++) {
+                            if (endsWith(bridge.GetWidgetName(w), kSuffix)) { btn = w; break; }
+                            w = bridge.GetParent(w);
                         }
+                        how = "hit-test";
                     }
+                }
+                static void* s_lastBtn = nullptr;
+                static int s_missLogs = 0;
+                if (btn) {
+                    bridge.SetCaption(btn, caption);
+                    s_captionSetCount++;
+                    if (btn != s_lastBtn) {
+                        s_lastBtn = btn;
+                        spdlog::info("render_hooks: MULTIPLAYER caption -> '{}' (lang '{}', found by {})",
+                                     caption, GetGameLanguage(), how);
+                    }
+                } else if (s_missLogs < 5) {
+                    s_missLogs++;
+                    spdlog::info("render_hooks: MULTIPLAYER button widget not found yet (lang '{}')",
+                                 GetGameLanguage());
                 }
             }
         }
     }
 
     // ── Periodic diagnostic ──
-    if (s_presentCount % 1800 == 1) {
+    static auto s_lastDiag = std::chrono::steady_clock::time_point{};
+    if (std::chrono::steady_clock::now() - s_lastDiag > std::chrono::seconds(60)) {
+        s_lastDiag = std::chrono::steady_clock::now();
         spdlog::info("render_hooks: frame={} phase={} gameLoaded={} connected={}",
                      s_presentCount, ClientPhaseToString(core.GetClientPhase()),
                      core.IsGameLoaded(), core.IsConnected());
@@ -473,6 +539,7 @@ static HRESULT __stdcall HookPresent(IDXGISwapChain* swapChain, UINT syncInterva
         SEH_OverlayUpdate();
         // NativeHud handles all display
         SEH_NativeHudUpdate();
+        SEH_NewGameSetupTick();
     }
 
     // ── OnGameTick driver ──
@@ -484,8 +551,9 @@ static HRESULT __stdcall HookPresent(IDXGISwapChain* swapChain, UINT syncInterva
         static int s_connectedFrames = 0;
         s_connectedFrames++;
 
-        // Log first 5 connected frames, then every 6000th (was every 100th: ~260 KB of log per 2 min)
-        if (s_connectedFrames <= 5 || s_connectedFrames % 6000 == 0) {
+        // Log only the first 5 connected frames (the menu can render >1000 fps, so any
+        // per-N-frames log line spams the log file)
+        if (s_connectedFrames <= 5) {
             spdlog::debug("render_hooks: Connected frame #{} (present #{})",
                           s_connectedFrames, s_presentCount);
         }

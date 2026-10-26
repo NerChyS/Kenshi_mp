@@ -5,7 +5,7 @@ RequestExecutionLevel admin
 ManifestDPIAware true
 
 !define APPNAME "Kenshi Online"
-!define APPVER  "0.3.1-alpha"
+!define APPVER  "0.3.3-alpha"
 !define UNINSTKEY "Software\Microsoft\Windows\CurrentVersion\Uninstall\KenshiOnline"
 !define UNINSTEXE "Uninstall Kenshi Online.exe"
 

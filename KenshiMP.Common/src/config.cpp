@@ -110,6 +110,33 @@ bool ServerConfig::Load(const std::string& path) {
         if (j.contains("gameSpeed"))  gameSpeed  = j["gameSpeed"].get<float>();
         if (j.contains("masterServer")) masterServer = j["masterServer"].get<std::string>();
         if (j.contains("masterPort"))   masterPort   = j["masterPort"].get<uint16_t>();
+        if (j.contains("masterServerEnabled")) masterServerEnabled = j["masterServerEnabled"].get<bool>();
+
+        worldOptionsMask = 0;
+        if (j.contains("worldOptions") && j["worldOptions"].is_object()) {
+            const auto& w = j["worldOptions"];
+            if (w.contains("enabled")) worldOptionsEnabled = w["enabled"].get<bool>();
+            auto getF = [&](const char* key, float& out, uint32_t bit) {
+                if (w.contains(key) && w[key].is_number()) {
+                    out = Clamp(w[key].get<float>(), 0.05f, 20.0f);
+                    worldOptionsMask |= bit;
+                }
+            };
+            auto getB = [&](const char* key, bool& out, uint32_t bit) {
+                if (w.contains(key) && w[key].is_boolean()) { out = w[key].get<bool>(); worldOptionsMask |= bit; }
+            };
+            getF("deathFrequency",   optDeathFrequency,   1u << 0);
+            getF("damageMultiplier", optDamageMult,       1u << 1);
+            getF("buildingSpeed",    optBuildingSpeed,    1u << 2);
+            getF("nestsMultiplier",  optNestsMult,        1u << 3);
+            getF("researchSpeed",    optResearchSpeed,    1u << 4);
+            getF("productionSpeed",  optProductionSpeed,  1u << 5);
+            getF("hungerTime",       optHungerTime,       1u << 6);
+            getB("easyProspecting",  optEasyProspecting,  1u << 7);
+            getB("banditsLootPlayer", optBanditsLootPlayer, 1u << 8);
+            getB("animalsEat",       optAnimalsEat,       1u << 9);
+            getB("difficultHealing", optDifficultHealing, 1u << 10);
+        }
 
         // ── Validate loaded values ──
         port        = Clamp<uint16_t>(port, 1024, 65535);
@@ -138,6 +165,23 @@ bool ServerConfig::Save(const std::string& path) const {
     j["gameSpeed"]  = gameSpeed;
     j["masterServer"] = masterServer;
     j["masterPort"]   = masterPort;
+    j["masterServerEnabled"] = masterServerEnabled;
+    {
+        json w;
+        w["enabled"] = worldOptionsEnabled;
+        if (worldOptionsMask & (1u << 0))  w["deathFrequency"]    = optDeathFrequency;
+        if (worldOptionsMask & (1u << 1))  w["damageMultiplier"]  = optDamageMult;
+        if (worldOptionsMask & (1u << 2))  w["buildingSpeed"]     = optBuildingSpeed;
+        if (worldOptionsMask & (1u << 3))  w["nestsMultiplier"]   = optNestsMult;
+        if (worldOptionsMask & (1u << 4))  w["researchSpeed"]     = optResearchSpeed;
+        if (worldOptionsMask & (1u << 5))  w["productionSpeed"]   = optProductionSpeed;
+        if (worldOptionsMask & (1u << 6))  w["hungerTime"]        = optHungerTime;
+        if (worldOptionsMask & (1u << 7))  w["easyProspecting"]   = optEasyProspecting;
+        if (worldOptionsMask & (1u << 8))  w["banditsLootPlayer"] = optBanditsLootPlayer;
+        if (worldOptionsMask & (1u << 9))  w["animalsEat"]        = optAnimalsEat;
+        if (worldOptionsMask & (1u << 10)) w["difficultHealing"]  = optDifficultHealing;
+        j["worldOptions"] = w;
+    }
 
     std::ofstream file(path);
     if (!file.is_open()) return false;

@@ -413,6 +413,23 @@ static void HandlePacket(const uint8_t* data, size_t len) {
         }
         break;
     }
+    case MessageType::S2C_WorldOptions: {
+        MsgWorldOptions wo;
+        if (r.ReadRaw(&wo, sizeof(wo))) {
+            printf("[<] World options: mask=0x%X damage=%.2f build=%.2f research=%.2f prod=%.2f hunger=%.2f nests=%.2f banditsLoot=%u\n",
+                   wo.presentMask, wo.damageMult, wo.buildingSpeed, wo.researchSpeed, wo.productionSpeed,
+                   wo.hungerTime, wo.nestsMult, wo.banditsLootPlayer);
+        }
+        break;
+    }
+    case MessageType::S2C_EntityHeartbeat: {
+        uint32_t tick = 0; uint16_t n = 0;
+        r.ReadU32(tick); r.ReadU16(n);
+        printf("[<] Heartbeat: %u entities:", n);
+        for (uint16_t i = 0; i < n; i++) { uint32_t id = 0; r.ReadU32(id); printf(" %u", id); }
+        printf("\n");
+        break;
+    }
     default:
         // Unknown packet type
         break;
@@ -431,6 +448,7 @@ static void PrintHelp() {
 }
 
 int main(int argc, char** argv) {
+    setvbuf(stdout, nullptr, _IONBF, 0);
     // Parse args
     std::string serverAddr = "127.0.0.1";
     uint16_t serverPort = KMP_DEFAULT_PORT;

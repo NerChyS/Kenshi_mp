@@ -35,6 +35,23 @@ struct ServerConfig {
     float       gameSpeed    = 1.0f;
     std::string masterServer = "162.248.94.149"; // Master server address
     uint16_t    masterPort   = 27801;            // Master server port
+    bool        masterServerEnabled = false;     // register on the public master server list
+
+    // World options (server.json "worldOptions"): host's Kenshi gameplay options that every
+    // client applies when it connects. Only keys present in server.json are sent.
+    bool        worldOptionsEnabled = true;
+    uint32_t    worldOptionsMask    = 0;         // which of the fields below were set
+    float       optDeathFrequency   = 1.0f;
+    float       optDamageMult       = 1.0f;
+    float       optBuildingSpeed    = 1.0f;
+    float       optNestsMult        = 1.0f;
+    float       optResearchSpeed    = 1.0f;
+    float       optProductionSpeed  = 1.0f;
+    float       optHungerTime       = 1.0f;
+    bool        optEasyProspecting  = false;
+    bool        optBanditsLootPlayer = true;
+    bool        optAnimalsEat       = true;
+    bool        optDifficultHealing = false;
 
     bool Load(const std::string& path);
     bool Save(const std::string& path) const;

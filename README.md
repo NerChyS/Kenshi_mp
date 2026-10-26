@@ -67,6 +67,19 @@ Compared with the original 0.3.0-alpha release:
 - Default server IP is `127.0.0.1` instead of the original author's master server.
 - Builds use the static CRT (no Visual C++ redistributable needed).
 
+## What's new in 0.3.3
+
+- **Host world settings** — `server.json` → `worldOptions` (damage, build/research/production speed,
+  starvation time, nests, death frequency, easy prospecting, bandits loot player, animals eat, difficult healing).
+  Every player gets them on connect; shown in the F1 panel. `masterServerEnabled` is `false` by default.
+- **Full hunger** at the start of a Multiplayer game (the start squad was set to "malnourished").
+- **F1** no longer opens Kenshi's Tutorials window; typing in chat/fields no longer reaches the game and fast typing no longer drops letters.
+- **MULTIPLAYER button** follows the game language (e.g. MULTIJUGADOR).
+- Joiners no longer lose the host's character when far away (heartbeat listed only nearby entities);
+  no more "Authority violation" spam; auto-connect sends the handshake; positive load countdown; less log/chat noise.
+- Known issues: the default squad name ("Nameless") is not yet renamed on non-English games, and connecting
+  from the main menu *before* New Game is unreliable for joiners — connect from inside the world (F1 → JOIN GAME).
+
 ## Known limitations
 
 - Combat damage is not fully synced; NPC AI runs locally on each PC.

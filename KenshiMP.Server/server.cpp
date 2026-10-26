@@ -34,6 +34,18 @@ CombatResult ResolveCombat(const ServerEntity& attacker, ServerEntity& target, u
 bool GameServer::Start(const ServerConfig& config) {
     m_config = config;
 
+    if (config.worldOptionsEnabled && config.worldOptionsMask != 0) {
+        spdlog::info("GameServer: World options for clients: damage x{} build x{} research x{} production x{} "
+                     "hungerTime x{} nests x{} deathFreq x{} | easyProspecting={} banditsLoot={} animalsEat={} "
+                     "difficultHealing={} (mask 0x{:X})",
+                     config.optDamageMult, config.optBuildingSpeed, config.optResearchSpeed,
+                     config.optProductionSpeed, config.optHungerTime, config.optNestsMult,
+                     config.optDeathFrequency, config.optEasyProspecting, config.optBanditsLootPlayer,
+                     config.optAnimalsEat, config.optDifficultHealing, config.worldOptionsMask);
+    } else {
+        spdlog::info("GameServer: World options not sent (server.json worldOptions disabled or empty)");
+    }
+
     if (enet_initialize() != 0) {
         spdlog::error("GameServer: ENet initialization failed");
         return false;
@@ -672,6 +684,29 @@ void GameServer::HandleHandshake(ENetPeer* peer, PacketReader& reader) {
         enet_peer_send(peer, KMP_CHANNEL_RELIABLE_ORDERED, pkt);
     }
 
+    // Host's world options (server.json "worldOptions") — every client applies them
+    if (m_config.worldOptionsEnabled && m_config.worldOptionsMask != 0) {
+        MsgWorldOptions wo{};
+        wo.presentMask       = m_config.worldOptionsMask;
+        wo.deathFrequency    = m_config.optDeathFrequency;
+        wo.damageMult        = m_config.optDamageMult;
+        wo.buildingSpeed     = m_config.optBuildingSpeed;
+        wo.nestsMult         = m_config.optNestsMult;
+        wo.researchSpeed     = m_config.optResearchSpeed;
+        wo.productionSpeed   = m_config.optProductionSpeed;
+        wo.hungerTime        = m_config.optHungerTime;
+        wo.easyProspecting   = m_config.optEasyProspecting ? 1 : 0;
+        wo.banditsLootPlayer = m_config.optBanditsLootPlayer ? 1 : 0;
+        wo.animalsEat        = m_config.optAnimalsEat ? 1 : 0;
+        wo.difficultHealing  = m_config.optDifficultHealing ? 1 : 0;
+        PacketWriter w;
+        w.WriteHeader(MessageType::S2C_WorldOptions);
+        w.WriteRaw(&wo, sizeof(wo));
+        ENetPacket* pkt = enet_packet_create(w.Data(), w.Size(), ENET_PACKET_FLAG_RELIABLE);
+        if (pkt) enet_peer_send(peer, KMP_CHANNEL_RELIABLE_ORDERED, pkt);
+        spdlog::info("GameServer: Sent world options (mask 0x{:X}) to '{}'", wo.presentMask, player.name);
+    }
+
     if (hostChanged) {
         BroadcastHostAssignment();
     }
@@ -1088,12 +1123,11 @@ void GameServer::BroadcastEntityHeartbeat() {
         for (const auto& [entityId, entity] : m_entities) {
             if (entity.state != EntityState::Active) continue;
 
-            // Include: entities owned by this player, or in nearby zones
-            if (entity.owner == playerId ||
-                entity.zone.IsAdjacent(player.zone) ||
-                entity.owner == 0) {
-                relevantIds.push_back(entityId);
-            }
+            // Include every active entity. BroadcastPositions() already sends all entities
+            // to every player (zone filtering was disabled there because zone mismatch kept
+            // players from seeing each other); filtering the heartbeat by zone made clients
+            // delete the other player's character as a "ghost" ("entity N not in server list").
+            relevantIds.push_back(entityId);
         }
 
         writer.WriteU16(static_cast<uint16_t>(relevantIds.size()));
@@ -2251,6 +2285,10 @@ void GameServer::HandleAdminCommand(ConnectedPlayer& player, PacketReader& reade
 // ── Master Server Registration ──
 
 void GameServer::ConnectToMaster() {
+    if (!m_config.masterServerEnabled) {
+        spdlog::info("GameServer: Master server registration disabled (server.json \"masterServerEnabled\": false)");
+        return;
+    }
     if (m_config.masterServer.empty()) {
         spdlog::info("GameServer: No master server configured, skipping registration");
         return;

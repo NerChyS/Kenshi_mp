@@ -1,4 +1,5 @@
 #include "overlay.h"
+#include "../game/world_options.h"
 #include "mygui_bridge.h"
 #include "../core.h"
 #include "../hooks/ai_hooks.h"
@@ -123,6 +124,7 @@ void Overlay::Update() {
         auto& core = Core::Get();
         if (core.GetClient().IsConnected()) {
             m_connecting = false;
+            m_quietAutoConnect = false;
             m_connectAttempt = 0;
             m_retryPending = false;
             OutputDebugStringA("KMP: Overlay — connection ESTABLISHED, sending handshake\n");
@@ -149,6 +151,16 @@ void Overlay::Update() {
             m_connecting = false;
             OutputDebugStringA("KMP: Overlay — connection attempt failed\n");
 
+            if (m_quietAutoConnect) {
+                // Automatic connect after load found no server: one soft message, no retries.
+                m_quietAutoConnect = false;
+                m_connectAttempt = 0;
+                core.GetNativeHud().AddSystemMessage(
+                    "No server answered at " + std::string(m_serverAddress) + ":" + std::string(m_serverPort) +
+                    ". Press F1 > JOIN GAME to connect to the host.");
+                spdlog::info("Overlay: automatic connect found no server — not retrying");
+                if (gameLoaded) core.TransitionTo(ClientPhase::GameReady);
+            } else
             // Retry if we haven't exceeded max attempts
             if (m_connectAttempt < m_maxConnectAttempts) {
                 m_retryPending = true;
@@ -171,6 +183,8 @@ void Overlay::Update() {
                 m_connectAttempt = 0;
                 if (gameLoaded) {
                     core.TransitionTo(ClientPhase::GameReady);
+                } else if (core.GetClientPhase() == ClientPhase::Connecting) {
+                    core.TransitionTo(ClientPhase::MainMenu);  // keep main-menu UI usable
                 }
                 if (!gameLoaded) {
                     if (m_nativeMenu.IsInitialized()) {
@@ -213,6 +227,7 @@ void Overlay::Update() {
             // THEN: full cleanup (clears registry, interpolation, player controller, resets state)
             core.SetConnected(false);
             m_connecting = false;
+            world_options::OnDisconnected();
 
             AddSystemMessage("Disconnected from server.");
             core.GetNativeHud().LogStep("WARN", "Disconnected from server!");
@@ -294,7 +309,8 @@ void Overlay::ResetForReconnect() {
 //  Helpers for NativeMenu to drive overlay connection state
 // ═══════════════════════════════════════════════════════════════
 
-void Overlay::SetAutoConnect(const std::string& ip, uint16_t port) {
+void Overlay::SetAutoConnect(const std::string& ip, uint16_t port, bool quiet) {
+    m_quietAutoConnect = quiet;
     strncpy(m_serverAddress, ip.c_str(), sizeof(m_serverAddress) - 1);
     snprintf(m_serverPort, sizeof(m_serverPort), "%d", port);
     m_autoConnectPending = true;

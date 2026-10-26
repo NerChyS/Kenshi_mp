@@ -252,32 +252,32 @@
             <!-- How-to-play help (visible on the main buttons page) -->
             <Widget type="Widget" skin="PanelEmpty" position_real="0.05 0.715 0.9 0.2" align="HStretch Bottom" name="MPHelpBox">
                 <Widget type="TextBox" skin="Kenshi_TextboxStandardText" position_real="0 0.0000 1 0.1667" align="HStretch Top" name="MPHelp0">
-                    <Property key="Caption" value="How to play (a world must be loaded first):"/>
+                    <Property key="Caption" value="How to play:"/>
                     <Property key="TextAlign" value="Left VCenter"/>
                     <Property key="TextColour" value="0.9 0.55 0.1"/>
                 </Widget>
                 <Widget type="TextBox" skin="Kenshi_TextboxStandardText" position_real="0 0.1667 1 0.1667" align="HStretch Top" name="MPHelp1">
-                    <Property key="Caption" value="1. Host: click HOST GAME (starts the server)."/>
+                    <Property key="Caption" value="1. Host: HOST GAME starts KenshiMP.Server.exe"/>
                     <Property key="TextAlign" value="Left VCenter"/>
                     <Property key="TextColour" value="0.871345 0.845139 0.810198"/>
                 </Widget>
                 <Widget type="TextBox" skin="Kenshi_TextboxStandardText" position_real="0 0.3333 1 0.1667" align="HStretch Top" name="MPHelp2">
-                    <Property key="Caption" value="2. Everyone: CLOSE > New Game > 'Multiplayer'."/>
+                    <Property key="Caption" value="2. CLOSE, New Game, Multiplayer start, Confirm"/>
                     <Property key="TextAlign" value="Left VCenter"/>
                     <Property key="TextColour" value="0.871345 0.845139 0.810198"/>
                 </Widget>
                 <Widget type="TextBox" skin="Kenshi_TextboxStandardText" position_real="0 0.5000 1 0.1667" align="HStretch Top" name="MPHelp3">
-                    <Property key="Caption" value="3. Create character > Confirm > wait ~90 s."/>
+                    <Property key="Caption" value="3. Wait for Multiplayer ready (at most 90 s)"/>
                     <Property key="TextAlign" value="Left VCenter"/>
                     <Property key="TextColour" value="0.871345 0.845139 0.810198"/>
                 </Widget>
                 <Widget type="TextBox" skin="Kenshi_TextboxStandardText" position_real="0 0.6667 1 0.1667" align="HStretch Top" name="MPHelp4">
-                    <Property key="Caption" value="4. KENSHI ONLINE bar appears > press F1."/>
+                    <Property key="Caption" value="4. F1, JOIN GAME, host IP, CONNECT"/>
                     <Property key="TextAlign" value="Left VCenter"/>
                     <Property key="TextColour" value="0.871345 0.845139 0.810198"/>
                 </Widget>
                 <Widget type="TextBox" skin="Kenshi_TextboxStandardText" position_real="0 0.8333 1 0.1667" align="HStretch Top" name="MPHelp5">
-                    <Property key="Caption" value="5. JOIN GAME > host IP > CONNECT."/>
+                    <Property key="Caption" value="Host IP for the host itself: 127.0.0.1"/>
                     <Property key="TextAlign" value="Left VCenter"/>
                     <Property key="TextColour" value="0.871345 0.845139 0.810198"/>
                 </Widget>

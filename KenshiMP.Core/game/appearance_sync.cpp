@@ -188,6 +188,8 @@ void Reset() {
     s_broadcastRequested.store(false);
 }
 
+static std::string s_lastSentBytes;   // what we broadcast last (to detect later changes)
+
 static void DoBroadcast() {
     uintptr_t arr = 0; int count = 0;
     if (!game::ReadKnownPlayerCharacters(arr, count) || count <= 0 || !ValidPtr(arr)) return;
@@ -214,6 +216,7 @@ static void DoBroadcast() {
         w.WriteString(msg);
         core.GetClient().SendReliable(w.Data(), w.Size());
     }
+    s_lastSentBytes = bytes;
     spdlog::info("appearance_sync: broadcast local appearance ({} bytes, {} chunks)", bytes.size(), chunks);
 }
 
@@ -231,6 +234,33 @@ void Tick() {
     if (!core.IsConnected() || !core.IsGameLoaded()) return;
 
     if (s_broadcastRequested.exchange(false)) DoBroadcast();
+
+    // Re-broadcast when the local look changed since the last broadcast (e.g. the player
+    // connected while still in the character editor, or changed appearance later).
+    {
+        static auto s_lastCheck = std::chrono::steady_clock::now();
+        auto t = std::chrono::steady_clock::now();
+        static int s_changeBroadcasts = 0;   // cap, in case the export isn't byte-stable
+        if (!s_lastSentBytes.empty() && s_changeBroadcasts < 5 &&
+            t - s_lastCheck > std::chrono::seconds(20)) {
+            s_lastCheck = t;
+            uintptr_t arr = 0; int count = 0;
+            if (game::ReadKnownPlayerCharacters(arr, count) && count > 0 && ValidPtr(arr)) {
+                uintptr_t app = SEH_GetAppearance(SEH_ReadPtr(arr));
+                if (app) {
+                    uintptr_t data = SEH_ReadPtr(app + APP_DATA);
+                    std::string path = TempPath("kmp_appearance_check.dat");
+                    std::string bytes;
+                    if (SEH_Save(data, &path) && ReadFileBytes(path, bytes) && !bytes.empty() &&
+                        bytes != s_lastSentBytes) {
+                        s_changeBroadcasts++;
+                        spdlog::info("appearance_sync: local appearance changed — re-broadcasting");
+                        DoBroadcast();
+                    }
+                }
+            }
+        }
+    }
 
     // Apply at most one appearance per tick, throttled.
     static auto s_lastTry = std::chrono::steady_clock::time_point{};

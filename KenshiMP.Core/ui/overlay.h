@@ -42,7 +42,11 @@ public:
     // Helpers for NativeMenu to drive overlay connection state
     void SetHostingServer(bool hosting) { m_hostingServer = hosting; }
     void SetConnecting(bool connecting) { m_connecting = connecting; }
-    void SetAutoConnect(const std::string& ip, uint16_t port);
+    // Queue a connect (with handshake) for 2 s after the world has loaded.
+    // quiet = automatic attempt: one try, no retries, soft message on failure.
+    void SetAutoConnect(const std::string& ip, uint16_t port, bool quiet = false);
+    void ClearQuietAutoConnect() { m_quietAutoConnect = false; }
+    bool HasPendingAutoConnect() const { return m_autoConnectPending && !m_autoConnectDone; }
     void SetConnectionInfo(const std::string& ip, uint16_t port, const std::string& name);
     void SetPlayerName(const std::string& name);
 
@@ -78,6 +82,7 @@ private:
     // Auto-connect on game load
     bool m_autoConnectPending = false;  // True = connect when game loads
     bool m_autoConnectDone = false;     // True = already attempted
+    bool m_quietAutoConnect = false;    // current attempt is the automatic one (no retries)
 
     // Hosting
     bool m_hostingServer = false;       // True if we launched the server process

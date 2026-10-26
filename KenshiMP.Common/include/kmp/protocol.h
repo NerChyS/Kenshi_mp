@@ -123,6 +123,7 @@ enum class MessageType : uint8_t {
     S2C_FactionAssignment = 0xF0,  // Server assigns faction string to client
     C2S_LobbyReady        = 0xF1,  // Client confirms ready with faction loaded
     S2C_LobbyStart        = 0xF2,  // Server tells all clients to start/load
+    S2C_WorldOptions      = 0xF3,  // Server → client: host's world/gameplay options (server.json)
 };
 
 // ── Packet Header ──

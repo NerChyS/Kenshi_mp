@@ -25,6 +25,8 @@ add_library(KenshiMP.Core SHARED
     game/game_character.cpp
     game/game_squad.cpp
     game/game_world.cpp
+    game/new_game_setup.cpp
+    game/world_options.cpp
     game/game_inventory.cpp
     game/game_building.cpp
     game/game_faction.cpp

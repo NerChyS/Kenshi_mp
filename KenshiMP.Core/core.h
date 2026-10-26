@@ -125,6 +125,10 @@ public:
             // Drop back to GameReady so user can reconnect
             if (m_gameLoaded) {
                 TransitionTo(ClientPhase::GameReady);
+            } else {
+                ClientPhase ph = m_clientPhase.load();
+                if (ph == ClientPhase::Connected || ph == ClientPhase::Connecting)
+                    TransitionTo(ClientPhase::MainMenu);  // disconnected on the main menu
             }
 
             // Disable CharacterCreate hook — zone-load bursts while disconnected
@@ -319,6 +323,7 @@ private:
     std::atomic<bool> m_needsEntityRescan{false}; // Set by entity_hooks after faction bootstrap
     bool              m_needSpawnQueueReset = false; // HandleSpawnQueue statics reset on reconnect
     bool              m_needPollReset = false;       // PollForGameLoad statics reset on second load
+    std::chrono::steady_clock::time_point m_loadStartTime{};  // when the current load began
     std::atomic<int>  m_loadEtaSeconds{-1};          // HUD hint: seconds until load detection gives up waiting
     std::atomic<bool> m_forceSpawnBypass{false};     // /forcespawn command bypass
 

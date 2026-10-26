@@ -397,6 +397,38 @@ struct MsgMasterServerEntry {
     uint8_t  reserved;
 };
 
+// ── World options (host decides, every client applies on connect) ──
+// Maps 1:1 onto Kenshi's GameplayOptions (the New Game "Advanced options").
+// presentMask bit = field is set by the server; unset fields keep the client's own value.
+enum WorldOptionBits : uint32_t {
+    WOPT_DEATH_FREQUENCY   = 1u << 0,
+    WOPT_DAMAGE_MULT       = 1u << 1,
+    WOPT_BUILDING_SPEED    = 1u << 2,
+    WOPT_NESTS_MULT        = 1u << 3,
+    WOPT_RESEARCH_SPEED    = 1u << 4,
+    WOPT_PRODUCTION_SPEED  = 1u << 5,
+    WOPT_HUNGER_TIME       = 1u << 6,
+    WOPT_EASY_PROSPECTING  = 1u << 7,
+    WOPT_BANDITS_LOOT      = 1u << 8,
+    WOPT_ANIMALS_EAT       = 1u << 9,
+    WOPT_DIFFICULT_HEALING = 1u << 10,
+};
+
+struct MsgWorldOptions {
+    uint32_t presentMask;
+    float    deathFrequency;
+    float    damageMult;
+    float    buildingSpeed;
+    float    nestsMult;
+    float    researchSpeed;
+    float    productionSpeed;
+    float    hungerTime;
+    uint8_t  easyProspecting;
+    uint8_t  banditsLootPlayer;
+    uint8_t  animalsEat;
+    uint8_t  difficultHealing;
+};
+
 #pragma pack(pop)
 
 } // namespace kmp

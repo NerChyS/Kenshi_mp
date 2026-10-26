@@ -1,4 +1,6 @@
 #include "core.h"
+#include "game/new_game_setup.h"
+#include "game/world_options.h"
 #include <algorithm>
 #include "sync/pending_snapshot_queue.h"
 #include "sys/command_registry.h"
@@ -1048,6 +1050,13 @@ bool Core::InitHooks() {
         }
     }
 
+    // Input hook: keep F1 (and typing into our UI) away from Kenshi's own key handling
+    if (input_hooks::Install()) {
+        m_nativeHud.LogStep("OK", "Input hook installed (F1 reserved)");
+    } else {
+        m_nativeHud.LogStep("WARN", "Input hook not installed");
+    }
+
     // AI hooks (AICreate + AIPackages)
     if (m_gameFuncs.AICreate) {
         m_nativeHud.LogStep("HOOK", "AI hooks...");
@@ -1281,7 +1290,16 @@ void Core::OnLoadingGapDetected() {
     // Accept from MainMenu (normal flow) or GameReady (in-game Load button,
     // detected by render_hooks as >10s gap). NOT from Startup — engine initialization
     // gaps are not save game loads.
-    if (current == ClientPhase::MainMenu || current == ClientPhase::GameReady) {
+    // Also accept Connected/Connecting while no world is loaded: the player connected
+    // from the main menu and then started/loaded a game. Without this the Loading phase
+    // was never entered and the load was never detected.
+    bool connectedBeforeLoad = !m_gameLoaded.load() &&
+        (current == ClientPhase::Connected || current == ClientPhase::Connecting);
+    if (current == ClientPhase::MainMenu || current == ClientPhase::GameReady || connectedBeforeLoad) {
+        if (connectedBeforeLoad) {
+            spdlog::info("Core: Loading gap while connected (connected from main menu) — tracking load");
+        }
+        new_game_setup::OnLoadStarted(current != ClientPhase::GameReady);
         // Reset game-loaded state so OnGameLoaded() can fire again for the new save.
         // Without this, a second load would never trigger OnGameLoaded because
         // m_gameLoaded is already true from the first load.
@@ -1289,6 +1307,7 @@ void Core::OnLoadingGapDetected() {
         m_initialEntityScanDone = false;
         m_spawnTeleportDone = false;
         m_needPollReset = true; // Reset PollForGameLoad statics on next call
+        m_loadStartTime = std::chrono::steady_clock::now();
 
         // If we were in GameReady, all cached game pointers (local AND remote)
         // are now stale. Clear everything to prevent UAF on freed game objects.
@@ -1345,8 +1364,8 @@ void Core::PollForGameLoad() {
     if (m_gameLoaded) return;
     // Poll during Loading (normal), but also Startup/MainMenu as fallback.
     // Loading gap detection can miss fast loads (user clicks Continue immediately).
-    ClientPhase phase = m_clientPhase.load(std::memory_order_acquire);
-    if (phase == ClientPhase::Connected || phase == ClientPhase::Connecting) return;
+    // (No early return for Connected/Connecting: a player may connect from the main
+    //  menu before the world loads — load detection must still run.)
 
     // Try to resolve PlayerBase/GameWorld globals.
     // During initial scan (before game loads), these point into the module or are 0.
@@ -1400,12 +1419,17 @@ void Core::PollForGameLoad() {
     s_pollCount++;
 
     // ── Player guidance: tell the player roughly how long until multiplayer is ready ──
+    // Based on wall-clock time since the load started (the 90 s hard timeout below is the
+    // upper bound). Never negative: 0 = "almost ready".
     {
-        int eta = (loadingCreates > 0) ? 5 : std::max(2, (45 - (s_noCharCount + 1)) * 2);
+        auto now = std::chrono::steady_clock::now();
+        if (s_pollCount == 1 || m_loadStartTime.time_since_epoch().count() == 0) m_loadStartTime = now;
+        int elapsed = static_cast<int>(std::chrono::duration_cast<std::chrono::seconds>(now - m_loadStartTime).count());
+        int eta = std::max(0, 90 - elapsed);
         m_loadEtaSeconds.store(eta, std::memory_order_relaxed);
-        if (s_pollCount == 1 || s_pollCount % 10 == 0) {
+        if (eta > 0 && (s_pollCount == 1 || s_pollCount % 10 == 0)) {
             m_nativeHud.AddSystemMessage("Multiplayer ready in ~" + std::to_string(eta) +
-                                         "s, then press F1 > JOIN GAME.");
+                                         "s at most, then press F1.");
         }
     }
 
@@ -1463,7 +1487,6 @@ void Core::PollForGameLoad() {
         if (s_noCharCount >= 45) {
             spdlog::error("Core::PollForGameLoad — HARD TIMEOUT: 90s with no loading detection! "
                          "Forcing OnGameLoaded (Steam deadlock prevention)");
-            m_nativeHud.AddSystemMessage("WARNING: Force-loaded after 90s timeout!");
             m_nativeHud.LogStep("WARN", "Hard timeout (90s) - forced GameLoaded");
             entity_hooks::SetLoadingPassthrough(false);
             OnGameLoaded();
@@ -1484,6 +1507,9 @@ void Core::OnGameLoaded() {
 
     // Transition to GameReady phase
     TransitionTo(ClientPhase::GameReady);
+
+    new_game_setup::OnGameLoaded();
+    world_options::OnGameLoaded();
 
     m_nativeHud.LogStep("GAME", "=== Game world loaded! ===");
     OutputDebugStringA("KMP: === Core::OnGameLoaded() START ===\n");
@@ -1708,19 +1734,14 @@ void Core::OnGameLoaded() {
     // ═══ AUTO-CONNECT ON GAME LOAD ═══
     // CRITICAL: Connect AFTER game loads, not in main menu!
     // This ensures world is ready before any network sync happens
-    if (!m_connected.load() && m_config.autoConnect) {
-        spdlog::info("Core::OnGameLoaded — Auto-connecting to {}:{}",
+    // Goes through the Overlay so the handshake is sent (the old direct ConnectAsync here
+    // opened the ENet connection but never sent C2S_Handshake). One quiet attempt only.
+    if (!m_connected.load() && m_config.autoConnect && !m_client.IsConnecting() &&
+        !m_overlay.HasPendingAutoConnect()) {
+        spdlog::info("Core::OnGameLoaded — Auto-connect queued to {}:{} (via overlay, with handshake)",
                      m_config.lastServer, m_config.lastPort);
-        m_nativeHud.AddSystemMessage("Game loaded - connecting to server...");
-
-        // ConnectAsync takes only 2 arguments (address, port)
-        if (m_client.ConnectAsync(m_config.lastServer, m_config.lastPort)) {
-            m_clientPhase.store(ClientPhase::Connecting);
-            m_nativeHud.LogStep("NET", "Connecting to " + m_config.lastServer + ":" + std::to_string(m_config.lastPort));
-        } else {
-            m_nativeHud.AddSystemMessage("Connection failed - is KenshiMP.Server.exe running on the host "
-                                         "and port 27800 UDP open? Press F1 > JOIN GAME to retry.");
-        }
+        m_overlay.SetConnectionInfo(m_config.lastServer, m_config.lastPort, m_config.playerName);
+        m_overlay.SetAutoConnect(m_config.lastServer, m_config.lastPort, /*quiet=*/true);
     }
 
     // ═══ MULTIPLAYER READY HANDSHAKE ═══
